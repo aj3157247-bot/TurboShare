@@ -13,149 +13,96 @@ class TransferServer(
     private val onState: (String) -> Unit
 ) {
     private var server: ServerSocket? = null
-    private val pool = Executors.newSingleThreadExecutor()
+    private val pool = Executors.newCachedThreadPool()
 
     fun start(): Int {
+        server?.close()
         server = ServerSocket(TransferProtocol.PORT)
-        val port = server!!.localPort
-
         pool.execute {
             try {
-                onState("Waiting for a device…")
-
-                val socket = server!!.accept()
-                receive(socket)
-            } catch (e: Exception) {
+                onState("Waiting for devices…")
+                while (!Thread.currentThread().isInterrupted) {
+                    val socket = server?.accept() ?: break
+                    pool.execute { runCatching { receive(socket) }.onFailure { onState("Receive failed: ${it.message}") } }
+                }
+            } catch (_: Exception) {
                 onState("Receiver stopped")
             }
         }
-
-        return port
+        return TransferProtocol.PORT
     }
 
     private fun receive(socket: Socket) {
         socket.use { connection ->
             connection.tcpNoDelay = true
-
-            val input = DataInputStream(
-                BufferedInputStream(
-                    connection.getInputStream(),
-                    TransferProtocol.BUFFER
-                )
-            )
-
-            val control = DataOutputStream(
-                BufferedOutputStream(
-                    connection.getOutputStream(),
-                    TransferProtocol.BUFFER
-                )
-            )
-
-            val magic = TransferProtocol.readString(input)
-            require(magic == TransferProtocol.MAGIC)
-
+            connection.keepAlive = true
+            val input = DataInputStream(BufferedInputStream(connection.getInputStream(), TransferProtocol.BUFFER))
+            val control = DataOutputStream(BufferedOutputStream(connection.getOutputStream(), TransferProtocol.BUFFER))
+            require(TransferProtocol.readString(input) == TransferProtocol.MAGIC) { "Unsupported TurboShare client" }
+            input.readInt() // transfer mode reserved for future adaptive tuning
             val count = input.readInt()
-            require(count in 1..1000)
-
+            require(count in 1..TransferProtocol.MAX_FILES)
             repeat(count) {
                 val name = TransferProtocol.readString(input)
                 val size = input.readLong()
-                val mime = TransferProtocol.readString(input)
+                require(size >= 0)
+                TransferProtocol.readString(input) // mime
                 val hash = TransferProtocol.readString(input)
-
-                val safeName = FileName.safe(name)
-
-                val dir = File(
-                    context.getExternalFilesDir(null),
-                    "Received"
-                )
-
+                val dir = File(context.getExternalFilesDir(null), "Received")
                 dir.mkdirs()
-
-                val finalFile = File(dir, safeName)
+                val safeName = FileName.safe(name)
+                val finalFile = uniqueFile(dir, safeName)
                 val tempFile = File(dir, "$safeName.part")
-
-                val existing =
-                    if (tempFile.exists()) tempFile.length()
-                    else 0L
-
+                val existing = tempFile.length().coerceAtMost(size)
                 RandomAccessFile(tempFile, "rw").use { out ->
+                    out.setLength(existing)
                     out.seek(existing)
-
                     control.writeLong(existing)
                     control.flush()
-
                     var done = existing
                     val buffer = ByteArray(TransferProtocol.BUFFER)
-
+                    val started = System.nanoTime()
                     while (done < size) {
-                        val want = minOf(
-                            buffer.size.toLong(),
-                            size - done
-                        ).toInt()
-
+                        val want = minOf(buffer.size.toLong(), size - done).toInt()
                         input.readFully(buffer, 0, want)
                         out.write(buffer, 0, want)
-
                         done += want
-
                         onProgress(name, done, size)
                     }
-                }
-
-                val actual = tempFile.inputStream().use {
-                    TransferProtocol.sha256(it)
-                }
-
-                if (actual.equals(hash, true)) {
-                    if (finalFile.exists()) {
-                        finalFile.delete()
+                    out.fd.sync()
+                    val elapsed = ((System.nanoTime() - started) / 1_000_000L).coerceAtLeast(1L)
+                    val actual = tempFile.inputStream().use { TransferProtocol.sha256(it) }
+                    if (actual.equals(hash, true) && tempFile.length() == size) {
+                        if (!tempFile.renameTo(finalFile)) throw IOException("Unable to finalize $name")
+                        history.add(TransferItem(name, size, "RECEIVED", System.currentTimeMillis(), true, size * 1000L / elapsed))
+                        onState("Received $name")
+                    } else {
+                        history.add(TransferItem(name, size, "RECEIVED", System.currentTimeMillis(), false))
+                        onState("Checksum failed for $name — transfer can resume")
                     }
-
-                    tempFile.renameTo(finalFile)
-
-                    history.add(
-                        TransferItem(
-                            name,
-                            size,
-                            "RECEIVED",
-                            System.currentTimeMillis(),
-                            true
-                        )
-                    )
-
-                    onState("Received $name")
-                } else {
-                    history.add(
-                        TransferItem(
-                            name,
-                            size,
-                            "RECEIVED",
-                            System.currentTimeMillis(),
-                            false
-                        )
-                    )
-
-                    onState("Checksum failed for $name")
                 }
             }
         }
     }
 
     fun stop() {
-        try {
-            server?.close()
-        } catch (_: Exception) {
-        }
-
+        runCatching { server?.close() }
+        server = null
         pool.shutdownNow()
+    }
+
+    private fun uniqueFile(dir: File, name: String): File {
+        var file = File(dir, name)
+        if (!file.exists()) return file
+        val dot = name.lastIndexOf('.')
+        val base = if (dot > 0) name.substring(0, dot) else name
+        val ext = if (dot > 0) name.substring(dot) else ""
+        var i = 2
+        while (file.exists()) file = File(dir, "$base ($i)$ext").also { i++ }
+        return file
     }
 }
 
 object FileName {
-    fun safe(name: String): String =
-        name
-            .replace(Regex("""[\\/:*?"<>|]"""), "_")
-            .take(180)
-            .ifBlank { "file" }
+    fun safe(name: String): String = name.replace(Regex("""[\\/:*?\"<>|]"""), "_").take(180).ifBlank { "file" }
 }

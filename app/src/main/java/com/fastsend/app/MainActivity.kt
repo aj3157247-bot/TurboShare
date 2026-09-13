@@ -1,18 +1,17 @@
 package com.fastsend.app
 
 import android.Manifest
-import android.content.Intent
 import android.content.pm.PackageManager
 import android.net.Uri
-import android.net.wifi.p2p.WifiP2pInfo
 import android.os.Build
 import android.os.Bundle
-import android.provider.Settings
+import android.view.Gravity
 import android.view.View
 import android.widget.*
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.content.ContextCompat
+import com.google.android.material.card.MaterialCardView
 import java.util.Locale
 
 class MainActivity : AppCompatActivity() {
@@ -22,30 +21,33 @@ class MainActivity : AppCompatActivity() {
     private lateinit var devicesBox: LinearLayout
     private lateinit var selectedBox: LinearLayout
     private lateinit var historyBox: LinearLayout
+    private lateinit var modeSpinner: Spinner
+    private lateinit var premiumButton: Button
 
     private val selected = mutableListOf<SelectedFile>()
     private lateinit var history: HistoryStore
     private lateinit var direct: WifiDirectManager
-    private var server: TransferServer? = null
     private lateinit var client: TransferClient
-    private var connectedHost: String? = null
+    private lateinit var premium: PremiumManager
+    private var webServer: WebTransferServer? = null
+    private var server: TransferServer? = null
+    private var transferMode = TransferMode.TURBO
 
     private val picker = registerForActivityResult(ActivityResultContracts.OpenMultipleDocuments()) { uris ->
         uris.forEach { addUri(it) }
         refreshSelected()
     }
-
-    private val permissions = registerForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) {
-        startDiscovery()
-    }
+    private val permissions = registerForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) { startDiscovery() }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         history = HistoryStore(this)
         client = TransferClient(contentResolver, history, ::onProgress, ::setStatus)
+        premium = PremiumManager(this, { updatePremiumUi() }, ::setStatus)
         buildUi()
         direct = WifiDirectManager(this, ::showDevices, ::onConnection, ::setStatus)
         direct.register()
+        premium.connect()
         requestNeededPermissions()
     }
 
@@ -53,77 +55,86 @@ class MainActivity : AppCompatActivity() {
         val scroll = ScrollView(this)
         val root = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
-            setPadding(28, 24, 28, 32)
+            setPadding(28, 28, 28, 36)
         }
         scroll.addView(root)
         setContentView(scroll)
 
-        val title = TextView(this).apply {
-            text = "⚡ " + getString(R.string.app_name)
-            textSize = 30f
-            setPadding(0, 0, 0, 6)
-        }
-        root.addView(title)
+        val header = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL }
+        val icon = ImageView(this).apply { setImageResource(R.drawable.ic_turboshare); layoutParams = LinearLayout.LayoutParams(64, 64) }
+        header.addView(icon)
+        header.addView(LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(16, 0, 0, 0)
+            addView(TextView(this@MainActivity).apply { text = getString(R.string.app_name); textSize = 30f })
+            addView(TextView(this@MainActivity).apply { text = getString(R.string.tagline); textSize = 14f })
+        })
+        root.addView(header)
 
-        val subtitle = TextView(this).apply {
-            text = getString(R.string.tagline)
-            textSize = 15f
-        }
-        root.addView(subtitle)
-
-        status = TextView(this).apply {
-            text = getString(R.string.ready)
-            textSize = 15f
-            setPadding(0, 18, 0, 12)
-        }
+        status = TextView(this).apply { text = getString(R.string.ready); textSize = 15f; setPadding(0, 20, 0, 10) }
         root.addView(status)
 
-        val pick = Button(this).apply {
-            text = getString(R.string.select_files)
-            setOnClickListener { picker.launch(arrayOf("*/*")) }
+        val turboCard = MaterialCardView(this).apply { radius = 28f; cardElevation = 0f; setContentPadding(20, 18, 20, 18) }
+        val turboBox = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
+        turboBox.addView(TextView(this).apply { text = getString(R.string.turbo_title); textSize = 19f })
+        turboBox.addView(TextView(this).apply { text = getString(R.string.turbo_subtitle); textSize = 13f; setPadding(0, 4, 0, 8) })
+        modeSpinner = Spinner(this)
+        modeSpinner.adapter = ArrayAdapter(this, android.R.layout.simple_spinner_dropdown_item, arrayOf(
+            getString(R.string.mode_turbo), getString(R.string.mode_balanced), getString(R.string.mode_battery)
+        ))
+        modeSpinner.setSelection(0)
+        modeSpinner.onItemSelectedListener = object : android.widget.AdapterView.OnItemSelectedListener {
+            override fun onItemSelected(parent: android.widget.AdapterView<*>?, view: View?, position: Int, id: Long) { transferMode = TransferMode.entries[position] }
+            override fun onNothingSelected(parent: android.widget.AdapterView<*>?) {}
         }
-        root.addView(pick)
+        turboBox.addView(modeSpinner)
+        turboCard.addView(turboBox)
+        root.addView(turboCard)
 
+        val pick = primaryButton(getString(R.string.select_files)) { picker.launch(arrayOf("*/*")) }
+        root.addView(pick)
         selectedBox = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
         root.addView(selectedBox)
 
-        val search = Button(this).apply {
-            text = getString(R.string.find_nearby)
-            setOnClickListener { startDiscovery() }
-        }
+        val search = primaryButton(getString(R.string.find_nearby)) { startDiscovery() }
         root.addView(search)
-
         devicesBox = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
         root.addView(devicesBox)
 
-        val receive = Button(this).apply {
-            text = getString(R.string.receive_files)
-            setOnClickListener { startReceiver() }
-        }
+        val receive = primaryButton(getString(R.string.receive_files)) { startReceiver() }
         root.addView(receive)
 
-        progress = ProgressBar(this, null, android.R.attr.progressBarStyleHorizontal).apply {
-            max = 1000
-            visibility = View.GONE
-        }
-        root.addView(progress)
+        root.addView(primaryButton(getString(R.string.web_transfer)) {
+            webServer?.stop()
+            webServer = WebTransferServer(this, history, ::setStatus)
+            webServer!!.start()
+        })
 
-        progressText = TextView(this).apply {
-            visibility = View.GONE
-            setPadding(0, 8, 0, 12)
-        }
+        premiumButton = primaryButton(getString(R.string.unlock_premium)) { premium.buy(this) }
+        root.addView(premiumButton)
+        updatePremiumUi()
+
+        progress = ProgressBar(this, null, android.R.attr.progressBarStyleHorizontal).apply { max = 1000; visibility = View.GONE }
+        root.addView(progress)
+        progressText = TextView(this).apply { visibility = View.GONE; setPadding(0, 8, 0, 12) }
         root.addView(progressText)
 
-        val historyTitle = TextView(this).apply {
-            text = getString(R.string.transfer_history)
-            textSize = 20f
-            setPadding(0, 28, 0, 8)
-        }
-        root.addView(historyTitle)
-
+        root.addView(TextView(this).apply { text = getString(R.string.transfer_history); textSize = 20f; setPadding(0, 28, 0, 8) })
         historyBox = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
         root.addView(historyBox)
         refreshHistory()
+    }
+
+    private fun primaryButton(text: String, action: () -> Unit) = Button(this).apply {
+        this.text = text
+        textSize = 15f
+        setOnClickListener { action() }
+        layoutParams = LinearLayout.LayoutParams(-1, LinearLayout.LayoutParams.WRAP_CONTENT).apply { topMargin = 10 }
+    }
+
+    private fun updatePremiumUi() {
+        premiumButton.text = if (premium.isPremium) getString(R.string.premium_active) else getString(R.string.unlock_premium)
+        premiumButton.isEnabled = !premium.isPremium
     }
 
     private fun addUri(uri: Uri) {
@@ -134,56 +145,42 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun queryName(uri: Uri): String? {
-        contentResolver.query(uri, arrayOf("_display_name"), null, null, null)?.use { c ->
-            if (c.moveToFirst()) return c.getString(0)
-        }
+        contentResolver.query(uri, arrayOf("_display_name"), null, null, null)?.use { c -> if (c.moveToFirst()) return c.getString(0) }
         return uri.lastPathSegment
     }
 
     private fun refreshSelected() {
         selectedBox.removeAllViews()
         if (selected.isEmpty()) return
-        val header = TextView(this).apply {
-            text = getString(R.string.files_selected, selected.size)
-            textSize = 17f
-        }
-        selectedBox.addView(header)
+        selectedBox.addView(TextView(this).apply { text = getString(R.string.files_selected, selected.size); textSize = 17f })
         selected.forEachIndexed { i, f ->
             selectedBox.addView(TextView(this).apply {
                 text = getString(R.string.file_item, f.name, formatSize(f.size))
-                setPadding(0, 4, 0, 4)
+                setPadding(0, 7, 0, 7)
                 setOnClickListener { selected.removeAt(i); refreshSelected() }
             })
         }
-        val clear = Button(this).apply {
-            text = getString(R.string.clear_selection)
-            setOnClickListener { selected.clear(); refreshSelected() }
-        }
-        selectedBox.addView(clear)
+        selectedBox.addView(Button(this).apply { text = getString(R.string.clear_selection); setOnClickListener { selected.clear(); refreshSelected() } })
     }
 
     private fun showDevices(list: List<DeviceInfo>) {
         devicesBox.removeAllViews()
         list.forEach { d ->
-            val b = Button(this).apply {
+            devicesBox.addView(Button(this).apply {
                 text = "📱 ${d.name}\n${d.address}"
                 setOnClickListener {
-                    direct.connect(d.address)
+                    if (selected.isEmpty()) setStatus(getString(R.string.select_files_first)) else direct.connect(d.address)
                 }
-            }
-            devicesBox.addView(b)
+            })
         }
     }
 
-    private fun onConnection(info: WifiP2pInfo?) {
+    private fun onConnection(info: android.net.wifi.p2p.WifiP2pInfo?) {
         if (info == null || !info.groupFormed) return
         val host = if (info.isGroupOwner) "127.0.0.1" else info.groupOwnerAddress?.hostAddress
         if (host != null) {
-            connectedHost = host
             setStatus(getString(R.string.connected_ready))
-            if (selected.isNotEmpty() && host != "127.0.0.1") {
-                client.send(host, selected.toList())
-            }
+            if (selected.isNotEmpty() && host != "127.0.0.1") client.send(host, selected.toList(), transferMode)
         }
     }
 
@@ -194,13 +191,8 @@ class MainActivity : AppCompatActivity() {
         setStatus(getString(R.string.receiver_ready))
     }
 
-    private fun startDiscovery() {
-        direct.discover()
-    }
-
-    private fun setStatus(s: String) {
-        runOnUiThread { status.text = s }
-    }
+    private fun startDiscovery() = direct.discover()
+    private fun setStatus(s: String) { runOnUiThread { status.text = s } }
 
     private fun onProgress(name: String, done: Long, total: Long) {
         runOnUiThread {
@@ -209,17 +201,17 @@ class MainActivity : AppCompatActivity() {
             val p = if (total > 0) ((done * 1000L) / total).toInt() else 0
             progress.progress = p.coerceIn(0, 1000)
             progressText.text = "$name\n${formatSize(done)} / ${formatSize(total)}  (${p / 10}%)"
-            if (total > 0 && done >= total) {
-                refreshHistory()
-            }
+            if (total > 0 && done >= total) refreshHistory()
         }
     }
 
     private fun refreshHistory() {
+        if (!::historyBox.isInitialized) return
         historyBox.removeAllViews()
-        history.all().take(15).forEach {
+        history.all().take(20).forEach {
+            val speed = if (it.speedBytesPerSecond > 0) " • ${formatSize(it.speedBytesPerSecond)}/s" else ""
             historyBox.addView(TextView(this).apply {
-                text = getString(R.string.history_item, if (it.success) getString(R.string.success_mark) else getString(R.string.failure_mark), it.direction, it.name, formatSize(it.size))
+                text = getString(R.string.history_item, if (it.success) getString(R.string.success_mark) else getString(R.string.failure_mark), it.direction, it.name, formatSize(it.size)) + speed
                 setPadding(0, 5, 0, 5)
             })
         }
@@ -243,8 +235,7 @@ class MainActivity : AppCompatActivity() {
     private fun formatSize(n: Long): String {
         if (n < 1024) return "$n B"
         val units = arrayOf("KB", "MB", "GB", "TB")
-        var x = n.toDouble()
-        var i = -1
+        var x = n.toDouble(); var i = -1
         while (x >= 1024 && i < units.lastIndex) { x /= 1024; i++ }
         return String.format(Locale.US, "%.1f %s", x, units[i])
     }
@@ -252,7 +243,9 @@ class MainActivity : AppCompatActivity() {
     override fun onDestroy() {
         direct.unregister()
         server?.stop()
+        webServer?.stop()
         client.shutdown()
+        premium.close()
         super.onDestroy()
     }
 }
