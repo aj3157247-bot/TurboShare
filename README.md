@@ -1,4 +1,4 @@
-# FastSend
+# TurboShare
 
 FastSend is an Android-to-Android direct file transfer app focused on a very simple UI and high-throughput local TCP transfer.
 
@@ -37,3 +37,25 @@ Open FastSend → **Select files** → **Find nearby devices** → tap the recei
 
 ## Current scope
 This release is the complete Android transfer core. Windows desktop transfer and QR-based pairing can be added as a separate companion client without changing the transfer protocol.
+
+
+## Localization
+The Android client is prepared for global distribution with automatic Android locale selection.
+
+Included languages:
+- English
+- فارسی (Persian, RTL)
+- العربية (Arabic, RTL)
+- Español
+- Français
+- Deutsch
+- Português
+- Türkçe
+- Русский
+- 中文
+- हिन्दी
+- Bahasa Indonesia
+- 日本語
+- 한국어
+
+The UI strings are resource-based, so adding more languages later does not require changing the transfer engine.
