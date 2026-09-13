@@ -1,27 +1,32 @@
-import 'import 'dart:io';
+import 'dart:io';
+import 'dart:async';
 import 'dart:typed_data';
+import 'dart:convert';
 import 'package:path_provider/path_provider.dart';
 
 class TurboNetworkService {
   ServerSocket? _serverSocket;
-  final int port = 4040; // پورت اختصاصی توربو شیر
+  RawDatagramSocket? _udpBroadcastSocket;
+  RawDatagramSocket? _udpListenSocket;
+  Timer? _broadcastTimer;
+  
+  final int tcpPort = 4040; // برای انتقال فایل
+  final int udpPort = 4041; // برای پیدا کردن دستگاه‌ها
 
-  // ۱. کدهای گیرنده (Receiver)
-  Future<void> startReceiving(Function(String) onStatusChanged) async {
+  // --- بخش گیرنده (Receiver) ---
+  Future<void> startReceiving(String myDeviceName, Function(String) onStatusChanged) async {
     try {
-      // گوش دادن به تمام آی‌پی‌های روی شبکه محلی
-      _serverSocket = await ServerSocket.bind(InternetAddress.anyIPv4, port);
-      onStatusChanged("آماده دریافت فایل. منتظر اتصال...");
+      // ۱. باز کردن سرور دریافت فایل
+      _serverSocket = await ServerSocket.bind(InternetAddress.anyIPv4, tcpPort);
+      onStatusChanged("آماده دریافت. در حال جستجوی فرستنده...");
 
       _serverSocket!.listen((Socket client) async {
-        onStatusChanged("دستگاه فرستنده متصل شد!");
-        
-        // مسیر ذخیره فایل در گوشی
+        onStatusChanged("فرستنده متصل شد! در حال دریافت...");
         Directory dir = await getApplicationDocumentsDirectory();
-        File savedFile = File('${dir.path}/turbo_received_file.bin');
+        // ذخیره فایل با نام یونیک
+        File savedFile = File('${dir.path}/turbo_file_${DateTime.now().millisecondsSinceEpoch}.bin');
         IOSink fileSink = savedFile.openWrite();
 
-        // دریافت بایت به بایت فایل و ذخیره با سرعت بالا
         client.listen((Uint8List data) {
           fileSink.add(data);
         }, onDone: () async {
@@ -30,29 +35,67 @@ class TurboNetworkService {
           onStatusChanged("فایل با موفقیت دریافت و ذخیره شد!");
         });
       });
+
+      // ۲. ارسال سیگنال حضور (Broadcast) به کل شبکه
+      _udpBroadcastSocket = await RawDatagramSocket.bind(InternetAddress.anyIPv4, 0);
+      _udpBroadcastSocket!.broadcastEnabled = true;
+      
+      // هر دو ثانیه اسم دستگاه را در شبکه فریاد می‌زند!
+      _broadcastTimer = Timer.periodic(const Duration(seconds: 2), (timer) {
+        List<int> data = utf8.encode("TURBO:$myDeviceName");
+        _udpBroadcastSocket!.send(data, InternetAddress("255.255.255.255"), udpPort);
+      });
+
     } catch (e) {
-      onStatusChanged("خطا در ایجاد سرور: $e");
+      onStatusChanged("خطا در سیستم گیرنده: $e");
     }
   }
 
   void stopReceiving() {
     _serverSocket?.close();
+    _broadcastTimer?.cancel();
+    _udpBroadcastSocket?.close();
   }
 
-  // ۲. کدهای فرستنده (Sender)
+  // --- بخش فرستنده (Sender) ---
+  
+  // جستجوی دستگاه‌های اطراف
+  Future<void> startDiscovery(Function(String name, String ip) onDeviceFound) async {
+    try {
+      _udpListenSocket = await RawDatagramSocket.bind(InternetAddress.anyIPv4, udpPort);
+      _udpListenSocket!.listen((RawSocketEvent event) {
+        if (event == RawSocketEvent.read) {
+          Datagram? dg = _udpListenSocket!.receive();
+          if (dg != null) {
+            String msg = utf8.decode(dg.data);
+            if (msg.startsWith("TURBO:")) {
+              String deviceName = msg.split(":")[1];
+              String deviceIp = dg.address.address;
+              onDeviceFound(deviceName, deviceIp);
+            }
+          }
+        }
+      });
+    } catch (e) {
+      print("خطا در جستجو: $e");
+    }
+  }
+
+  void stopDiscovery() {
+    _udpListenSocket?.close();
+  }
+
+  // ارسال فایل به دستگاه پیدا شده
   Future<void> sendFile(File file, String receiverIp, Function(String) onStatusChanged) async {
     try {
       onStatusChanged("در حال اتصال به $receiverIp...");
-      // اتصال به دستگاه گیرنده
-      Socket socket = await Socket.connect(receiverIp, port);
+      Socket socket = await Socket.connect(receiverIp, tcpPort);
       onStatusChanged("متصل شد! در حال ارسال فایل...");
-
-      // خواندن فایل و ارسال آن به صورت استریم (برای جلوگیری از پر شدن رم)
-      await socket.addStream(file.openRead());
       
+      await socket.addStream(file.openRead());
       await socket.flush();
       socket.close();
-      onStatusChanged("ارسال فایل با موفقیت انجام شد!");
+      onStatusChanged("ارسال با موفقیت انجام شد 🚀");
     } catch (e) {
       onStatusChanged("خطا در ارسال: $e");
     }
