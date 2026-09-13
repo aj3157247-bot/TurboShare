@@ -34,18 +34,17 @@ jobs:
         with:
           gradle-version: '8.11.1'
 
-      - name: Build Release APK
-        run: gradle :app:assembleRelease --stacktrace
+      - name: Build signed Debug APK
+        run: gradle :app:assembleDebug --stacktrace
 
-      - name: Find generated APK
+      - name: Find APK
         run: |
-          echo "Generated APK files:"
-          find . -type f -name "*.apk" -print
+          echo "Generated APK:"
+          find app/build/outputs/apk -type f -name "*.apk" -print
 
-      - name: Upload Release APK
+      - name: Upload installable APK
         uses: actions/upload-artifact@v4
         with:
-          name: TurboShare-Release-APK
-          path: |
-            app/build/outputs/apk/release/*.apk
+          name: TurboShare-debug
+          path: app/build/outputs/apk/debug/*.apk
           if-no-files-found: error
