@@ -55,7 +55,7 @@ class PremiumManager(
             .setProductList(listOf(QueryProductDetailsParams.Product.newBuilder().setProductId(PREMIUM_ID).setProductType(BillingClient.ProductType.INAPP).build()))
             .build()
         billing.queryProductDetailsAsync(params) { result, details ->
-            if (result.responseCode == BillingClient.BillingResponseCode.OK) product = details.productDetailsList.firstOrNull()
+            if (result.responseCode == BillingClient.BillingResponseCode.OK) product = details.firstOrNull()
         }
     }
 
@@ -65,7 +65,7 @@ class PremiumManager(
             onMessage("Premium is not configured in Play Console yet")
             return
         }
-        val offer = p.oneTimePurchaseOfferDetailsList?.firstOrNull()
+        val offer = p.oneTimePurchaseOfferDetails
         if (offer == null) {
             onMessage("Premium offer is unavailable")
             return
