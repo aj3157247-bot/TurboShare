@@ -1,7 +1,6 @@
 package com.fastsend.app
 
 import android.content.Context
-import android.net.Uri
 import java.io.*
 import java.net.ServerSocket
 import java.net.Socket
@@ -19,24 +18,42 @@ class TransferServer(
     fun start(): Int {
         server = ServerSocket(TransferProtocol.PORT)
         val port = server!!.localPort
+
         pool.execute {
             try {
                 onState("Waiting for a device…")
+
                 val socket = server!!.accept()
                 receive(socket)
             } catch (e: Exception) {
                 onState("Receiver stopped")
             }
         }
+
         return port
     }
 
     private fun receive(socket: Socket) {
-        socket.use {
-            it.tcpNoDelay = true
-            val input = DataInputStream(BufferedInputStream(it.getInputStream(), TransferProtocol.BUFFER))
+        socket.use { connection ->
+            connection.tcpNoDelay = true
+
+            val input = DataInputStream(
+                BufferedInputStream(
+                    connection.getInputStream(),
+                    TransferProtocol.BUFFER
+                )
+            )
+
+            val control = DataOutputStream(
+                BufferedOutputStream(
+                    connection.getOutputStream(),
+                    TransferProtocol.BUFFER
+                )
+            )
+
             val magic = TransferProtocol.readString(input)
             require(magic == TransferProtocol.MAGIC)
+
             val count = input.readInt()
             require(count in 1..1000)
 
@@ -45,38 +62,80 @@ class TransferServer(
                 val size = input.readLong()
                 val mime = TransferProtocol.readString(input)
                 val hash = TransferProtocol.readString(input)
+
                 val safeName = FileName.safe(name)
-                val dir = File(context.getExternalFilesDir(null), "Received")
+
+                val dir = File(
+                    context.getExternalFilesDir(null),
+                    "Received"
+                )
+
                 dir.mkdirs()
+
                 val finalFile = File(dir, safeName)
                 val tempFile = File(dir, "$safeName.part")
-                var existing = if (tempFile.exists()) tempFile.length() else 0L
 
-                val out = RandomAccessFile(tempFile, "rw")
-                out.seek(existing)
-                val control = DataOutputStream(BufferedOutputStream(it.getOutputStream()))
-                control.writeLong(existing)
-                control.flush()
+                val existing =
+                    if (tempFile.exists()) tempFile.length()
+                    else 0L
 
-                var done = existing
-                val buffer = ByteArray(TransferProtocol.BUFFER)
-                while (done < size) {
-                    val want = minOf(buffer.size.toLong(), size - done).toInt()
-                    input.readFully(buffer, 0, want)
-                    out.write(buffer, 0, want)
-                    done += want
-                    onProgress(name, done, size)
+                RandomAccessFile(tempFile, "rw").use { out ->
+                    out.seek(existing)
+
+                    control.writeLong(existing)
+                    control.flush()
+
+                    var done = existing
+                    val buffer = ByteArray(TransferProtocol.BUFFER)
+
+                    while (done < size) {
+                        val want = minOf(
+                            buffer.size.toLong(),
+                            size - done
+                        ).toInt()
+
+                        input.readFully(buffer, 0, want)
+                        out.write(buffer, 0, want)
+
+                        done += want
+
+                        onProgress(name, done, size)
+                    }
                 }
-                out.close()
 
-                val actual = tempFile.inputStream().use { TransferProtocol.sha256(it) }
+                val actual = tempFile.inputStream().use {
+                    TransferProtocol.sha256(it)
+                }
+
                 if (actual.equals(hash, true)) {
-                    if (finalFile.exists()) finalFile.delete()
+                    if (finalFile.exists()) {
+                        finalFile.delete()
+                    }
+
                     tempFile.renameTo(finalFile)
-                    history.add(TransferItem(name, size, "RECEIVED", System.currentTimeMillis(), true))
+
+                    history.add(
+                        TransferItem(
+                            name,
+                            size,
+                            "RECEIVED",
+                            System.currentTimeMillis(),
+                            true
+                        )
+                    )
+
                     onState("Received $name")
                 } else {
-                    history.add(TransferItem(name, size, "RECEIVED", System.currentTimeMillis(), false))
+                    history.add(
+                        TransferItem(
+                            name,
+                            size,
+                            "RECEIVED",
+                            System.currentTimeMillis(),
+                            false
+                        )
+                    )
+
                     onState("Checksum failed for $name")
                 }
             }
@@ -84,12 +143,19 @@ class TransferServer(
     }
 
     fun stop() {
-        try { server?.close() } catch (_: Exception) {}
+        try {
+            server?.close()
+        } catch (_: Exception) {
+        }
+
         pool.shutdownNow()
     }
 }
 
 object FileName {
     fun safe(name: String): String =
-        name.replace(Regex("""[\\/:*?"<>|]"""), "_").take(180).ifBlank { "file" }
+        name
+            .replace(Regex("""[\\/:*?"<>|]"""), "_")
+            .take(180)
+            .ifBlank { "file" }
 }
