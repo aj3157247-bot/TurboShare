@@ -25,11 +25,27 @@ jobs:
         with:
           gradle-version: '8.11.1'
 
-      - name: Verify Android build tasks
-        run: gradle :app:tasks --all --no-daemon
+      - name: Show project structure
+        run: |
+          echo "=== Root files ==="
+          ls -la
+          echo "=== App files ==="
+          ls -la app
+          echo "=== App build.gradle.kts ==="
+          cat app/build.gradle.kts
+          echo "=== Root build.gradle.kts ==="
+          cat build.gradle.kts
+          echo "=== Settings ==="
+          cat settings.gradle.kts
+
+      - name: Check Gradle projects
+        run: gradle projects --no-daemon --stacktrace
+
+      - name: Check Android tasks
+        run: gradle :app:tasks --all --no-daemon --stacktrace
 
       - name: Build TurboShare APK
-        run: gradle :app:assembleDebug --no-daemon --stacktrace
+        run: gradle :app:assembleDebug --no-daemon --stacktrace --refresh-dependencies
 
       - name: Upload debug APK
         uses: actions/upload-artifact@v4
