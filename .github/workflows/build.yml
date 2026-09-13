@@ -9,12 +9,17 @@ on:
 jobs:
   build:
     runs-on: ubuntu-latest
+    
+    # 👇 اضافه کردن این بخش برای اینکه گیت‌هاب بداند وارد کدام پوشه شود
+    defaults:
+      run:
+        working-directory: ./turboshare
 
     steps:
-    - uses: actions/checkout@v4 # 👈 آپدیت شد به v4
+    - uses: actions/checkout@v4
     
     - name: Set up Java
-      uses: actions/setup-java@v4 # 👈 آپدیت شد به v4
+      uses: actions/setup-java@v4
       with:
         distribution: 'zulu'
         java-version: '17'
@@ -32,7 +37,8 @@ jobs:
       run: flutter build apk --release
       
     - name: Upload APK
-      uses: actions/upload-artifact@v4 # 👈 آپدیت شد به v4
+      uses: actions/upload-artifact@v4
       with:
         name: TurboShare-Release-APK
-        path: build/app/outputs/flutter-apk/app-release.apk
+        # 👇 مسیر دریافت فایل خروجی هم باید آپدیت شود
+        path: turboshare/build/app/outputs/flutter-apk/app-release.apk
