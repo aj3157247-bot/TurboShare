@@ -1,21 +1,28 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <string name="app_name">TurboShare</string>
-    <string name="tagline">Fast • Simple • Direct</string>
+    <string name="tagline">Turbo • Secure • Direct • Global</string>
     <string name="ready">Ready</string>
     <string name="select_files">📤 Select files</string>
     <string name="find_nearby">📡 Find nearby devices</string>
     <string name="receive_files">📥 Receive files</string>
+    <string name="web_transfer">💻 Transfer with PC / Web</string>
     <string name="transfer_history">Transfer history</string>
     <string name="files_selected">%1$d file(s) selected</string>
     <string name="clear_selection">Clear selection</string>
-    <string name="connected_ready">Connected. Ready to transfer.</string>
-    <string name="receiver_ready">Receiver ready. On the other phone, select this phone.</string>
+    <string name="connected_ready">Connected. TurboShare is ready.</string>
+    <string name="receiver_ready">Receiver ready. Select this device from the sender.</string>
     <string name="file_fallback">file</string>
-    <string name="connected">Connected</string>
     <string name="file_item">• %1$s  (%2$s)</string>
     <string name="history_item">%1$s %2$s: %3$s • %4$s</string>
     <string name="success_mark">✓</string>
     <string name="failure_mark">✕</string>
-    <string name="status_transfer_complete">Transfer complete</string>
+    <string name="turbo_title">⚡ Turbo Engine</string>
+    <string name="turbo_subtitle">Adaptive buffers, resume, checksum verification and smart duplicate handling.</string>
+    <string name="mode_turbo">Turbo</string>
+    <string name="mode_balanced">Balanced</string>
+    <string name="mode_battery">Battery saver</string>
+    <string name="select_files_first">Select files first.</string>
+    <string name="unlock_premium">⭐ Unlock TurboShare Pro</string>
+    <string name="premium_active">✓ TurboShare Pro active</string>
 </resources>
