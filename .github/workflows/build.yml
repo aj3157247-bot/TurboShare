@@ -25,8 +25,11 @@ jobs:
         with:
           gradle-version: '8.11.1'
 
+      - name: Verify Android build tasks
+        run: gradle :app:tasks --all --no-daemon
+
       - name: Build TurboShare APK
-        run: gradle :app:assembleDebug --stacktrace
+        run: gradle :app:assembleDebug --no-daemon --stacktrace
 
       - name: Upload debug APK
         uses: actions/upload-artifact@v4
