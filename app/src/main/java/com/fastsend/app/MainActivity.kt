@@ -59,27 +59,27 @@ class MainActivity : AppCompatActivity() {
         setContentView(scroll)
 
         val title = TextView(this).apply {
-            text = "⚡ FastSend"
+            text = "⚡ " + getString(R.string.app_name)
             textSize = 30f
             setPadding(0, 0, 0, 6)
         }
         root.addView(title)
 
         val subtitle = TextView(this).apply {
-            text = "Fast • Simple • Direct"
+            text = getString(R.string.tagline)
             textSize = 15f
         }
         root.addView(subtitle)
 
         status = TextView(this).apply {
-            text = "Ready"
+            text = getString(R.string.ready)
             textSize = 15f
             setPadding(0, 18, 0, 12)
         }
         root.addView(status)
 
         val pick = Button(this).apply {
-            text = "📤 Select files"
+            text = getString(R.string.select_files)
             setOnClickListener { picker.launch(arrayOf("*/*")) }
         }
         root.addView(pick)
@@ -88,7 +88,7 @@ class MainActivity : AppCompatActivity() {
         root.addView(selectedBox)
 
         val search = Button(this).apply {
-            text = "📡 Find nearby devices"
+            text = getString(R.string.find_nearby)
             setOnClickListener { startDiscovery() }
         }
         root.addView(search)
@@ -97,7 +97,7 @@ class MainActivity : AppCompatActivity() {
         root.addView(devicesBox)
 
         val receive = Button(this).apply {
-            text = "📥 Receive files"
+            text = getString(R.string.receive_files)
             setOnClickListener { startReceiver() }
         }
         root.addView(receive)
@@ -115,7 +115,7 @@ class MainActivity : AppCompatActivity() {
         root.addView(progressText)
 
         val historyTitle = TextView(this).apply {
-            text = "Transfer history"
+            text = getString(R.string.transfer_history)
             textSize = 20f
             setPadding(0, 28, 0, 8)
         }
@@ -127,7 +127,7 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun addUri(uri: Uri) {
-        val name = queryName(uri) ?: "file"
+        val name = queryName(uri) ?: getString(R.string.file_fallback)
         val size = contentResolver.openAssetFileDescriptor(uri, "r")?.use { it.length } ?: -1L
         val mime = contentResolver.getType(uri) ?: "application/octet-stream"
         if (selected.none { it.uri == uri }) selected += SelectedFile(uri, name, size.coerceAtLeast(0), mime)
@@ -144,19 +144,19 @@ class MainActivity : AppCompatActivity() {
         selectedBox.removeAllViews()
         if (selected.isEmpty()) return
         val header = TextView(this).apply {
-            text = "${selected.size} file(s) selected"
+            text = getString(R.string.files_selected, selected.size)
             textSize = 17f
         }
         selectedBox.addView(header)
         selected.forEachIndexed { i, f ->
             selectedBox.addView(TextView(this).apply {
-                text = "• ${f.name}  (${formatSize(f.size)})"
+                text = getString(R.string.file_item, f.name, formatSize(f.size))
                 setPadding(0, 4, 0, 4)
                 setOnClickListener { selected.removeAt(i); refreshSelected() }
             })
         }
         val clear = Button(this).apply {
-            text = "Clear selection"
+            text = getString(R.string.clear_selection)
             setOnClickListener { selected.clear(); refreshSelected() }
         }
         selectedBox.addView(clear)
@@ -180,7 +180,7 @@ class MainActivity : AppCompatActivity() {
         val host = if (info.isGroupOwner) "127.0.0.1" else info.groupOwnerAddress?.hostAddress
         if (host != null) {
             connectedHost = host
-            setStatus("Connected. Ready to transfer.")
+            setStatus(getString(R.string.connected_ready))
             if (selected.isNotEmpty() && host != "127.0.0.1") {
                 client.send(host, selected.toList())
             }
@@ -191,7 +191,7 @@ class MainActivity : AppCompatActivity() {
         server?.stop()
         server = TransferServer(this, history, ::onProgress, ::setStatus)
         server!!.start()
-        setStatus("Receiver ready. On the other phone, select this phone.")
+        setStatus(getString(R.string.receiver_ready))
     }
 
     private fun startDiscovery() {
@@ -219,7 +219,7 @@ class MainActivity : AppCompatActivity() {
         historyBox.removeAllViews()
         history.all().take(15).forEach {
             historyBox.addView(TextView(this).apply {
-                text = "${if (it.success) "✓" else "✕"} ${it.direction}: ${it.name} • ${formatSize(it.size)}"
+                text = getString(R.string.history_item, if (it.success) getString(R.string.success_mark) else getString(R.string.failure_mark), it.direction, it.name, formatSize(it.size))
                 setPadding(0, 5, 0, 5)
             })
         }
