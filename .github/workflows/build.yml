@@ -9,11 +9,6 @@ on:
 jobs:
   build:
     runs-on: ubuntu-latest
-    
-    # به گیت‌هاب می‌گوییم دستورات فلاتر را داخل پوشه turboshare اجرا کند
-    defaults:
-      run:
-        working-directory: ./turboshare
 
     steps:
     - uses: actions/checkout@v4
@@ -40,5 +35,4 @@ jobs:
       uses: actions/upload-artifact@v4
       with:
         name: TurboShare-Release-APK
-        # مسیر دریافت فایل خروجی دقیقاً روی پوشه turboshare تنظیم شد
-        path: turboshare/build/app/outputs/flutter-apk/app-release.apk
+        path: build/app/outputs/flutter-apk/app-release.apk
